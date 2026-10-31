@@ -40,7 +40,7 @@ input:focus,textarea:focus{outline:none;border-bottom-color:var(--accent)}
 textarea{resize:vertical;min-height:7.5rem}
 input[type=file]{max-width:100%;color:var(--muted)}
 .previews{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center}
-.previews img{width:72px;height:72px;object-fit:cover;border:1px solid var(--line)}
+.previews img,.previews video{width:72px;height:72px;object-fit:cover;border:1px solid var(--line);background:var(--surface)}
 .previews span{color:var(--muted)}
 .go{background:var(--accent);color:var(--accent-ink);border:0;padding:13px 26px;cursor:pointer;font-weight:600;letter-spacing:.04em}
 .go:disabled{opacity:.5;cursor:default}
@@ -52,6 +52,7 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
 .rows{display:flex;flex-direction:column;margin-top:18px}
 .row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:16px;align-items:center;padding-block:12px;border-bottom:1px solid var(--line)}
 .thumb{width:64px;height:64px;background:var(--surface);object-fit:cover;display:block}
+.hint{color:var(--muted);font-size:.9rem;margin:6px 0 0}
 .row b{font-family:var(--f-display);font-weight:500;font-size:1.2rem;display:block;overflow-wrap:anywhere}
 .row span.meta{color:var(--muted);font-size:.9rem}
 .row .rm{background:none;border:0;color:var(--muted);text-decoration:underline;cursor:pointer;padding:6px}
@@ -92,7 +93,7 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
       <div class="fld"><label class="mono" for="f-place">Place</label><input type="text" id="f-place" maxlength="120"></div>
       <div class="fld full"><label class="mono" for="f-people">Who was there</label><input type="text" id="f-people" maxlength="200"></div>
       <div class="fld full"><label class="mono" for="f-story">The story</label><textarea id="f-story" maxlength="6000"></textarea></div>
-      <div class="fld full"><label class="mono" for="f-photo">Photos</label><input type="file" id="f-photo" accept="image/png,image/jpeg,image/webp,image/gif" multiple><div class="previews" id="previews"></div></div>
+      <div class="fld full"><label class="mono" for="f-photo">Photos and videos</label><input type="file" id="f-photo" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" multiple><div class="previews" id="previews"></div></div>
       <div class="actions"><button class="go mono" id="save" type="submit">Save memory</button><span class="status" id="status" role="status" aria-live="polite"></span></div>
     </form>
 
@@ -148,22 +149,44 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
   $("#f-photo").addEventListener("change",function(){
     clearPreviews();
     var box=$("#previews"),files=Array.prototype.slice.call(this.files);
-    files.slice(0,24).forEach(function(f){var u=URL.createObjectURL(f);urls.push(u);var i=document.createElement("img");i.src=u;i.alt="";box.appendChild(i)});
+    files.slice(0,24).forEach(function(f){
+      var u=URL.createObjectURL(f);urls.push(u);
+      var i=document.createElement(isVideoFile(f)?"video":"img");
+      if(i.tagName==="VIDEO"){i.muted=true;i.preload="metadata";i.src=u+"#t=0.1"}else{i.src=u;i.alt=""}
+      box.appendChild(i);
+    });
     if(files.length>24){var t=document.createElement("span");t.textContent="+ "+(files.length-24)+" more";box.appendChild(t)}
-    else if(files.length>1){var c=document.createElement("span");c.textContent=files.length+" photos";box.appendChild(c)}
+    else if(files.length>1){var c=document.createElement("span");c.textContent=files.length+" files";box.appendChild(c)}
   });
 
   /* uploads one photo at a time; a failed photo is skipped and counted */
+  var lastErr="";
+  var VIDEO_TYPES={mp4:"video/mp4",webm:"video/webm",mov:"video/quicktime"};
+  function videoExt(f){var m=/\.(mp4|webm|mov)$/i.exec(f.name||"");return m?m[1].toLowerCase():""}
+  function isVideoFile(f){return (f.type||"").indexOf("video/")===0||!!videoExt(f)}
+  async function uploadVideo(file,label,st){
+    var ext=videoExt(file);
+    if(!ext)throw new Error("Use an MP4, WebM or MOV video.");
+    if(!window.__uploadVideo)throw new Error("The video uploader did not load. Reload the page and try again.");
+    var base=(file.name||"video").replace(/\.[^.]+$/,"").toLowerCase().replace(/[^a-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"video";
+    var out=await window.__uploadVideo("videos/"+base+"."+ext,file,{
+      access:"public",handleUploadUrl:"/api/video-token",headers:{"x-admin-password":pw},multipart:true,contentType:VIDEO_TYPES[ext],
+      onUploadProgress:function(e){say(st,label+" "+Math.round(e.percentage)+"%")}
+    });
+    return out.url;
+  }
   async function uploadFiles(files,st){
     var photos=[],failed=0;
     for(var i=0;i<files.length;i++){
-      say(st,"Uploading photo "+(i+1)+" of "+files.length+".");
+      var label="Uploading "+(isVideoFile(files[i])?"video":"photo")+" "+(i+1)+" of "+files.length+".";
+      say(st,label);
       try{
+        if(isVideoFile(files[i])){photos.push(await uploadVideo(files[i],label,st));continue}
         var data=await prepare(files[i]);
         var base=(files[i].name||"photo").replace(/\.[^.]+$/,"");
         var up=await api("/api/photo?name="+encodeURIComponent(base),{method:"POST",headers:{"Content-Type":data.type||"image/jpeg"},body:data});
         photos.push(up.url);
-      }catch(err){if(err.status===401)throw err;failed++}
+      }catch(err){if(err.status===401)throw err;failed++;lastErr=err.message||""}
     }
     return {photos:photos,failed:failed};
   }
@@ -197,13 +220,13 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
       var files=Array.prototype.slice.call($("#f-photo").files),photos=[],failed=0;
       if(files.length){
         var up=await uploadFiles(files,st);photos=up.photos;failed=up.failed;
-        if(!photos.length)throw new Error("None of the photos could be uploaded. Try again.");
+        if(!photos.length)throw new Error("None of the files could be uploaded. "+lastErr);
       }
       say(st,"Saving the memory.");
       await api("/api/memories",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"add",memory:{
         title:title,date:$("#f-date").value,place:$("#f-place").value,people:$("#f-people").value,story:$("#f-story").value,photos:photos}})});
       $("#form").reset();$("#f-date").value=today();clearPreviews();
-      say(st,failed?"Saved with "+photos.length+" of "+files.length+" photos. "+failed+" could not upload. Use Add photos in the list below to try them again.":"Saved. It is on your site now.",failed?"bad":"good");
+      say(st,failed?"Saved with "+photos.length+" of "+files.length+" files. "+failed+" could not upload"+(lastErr?" ("+lastErr+")":"")+". Use Add photos in the list below to try them again.":"Saved. It is on your site now.",failed?"bad":"good");
       loadList();
     }catch(err){
       if(err.status===401){showLogin("Your session ended. Sign in again.");return}
@@ -225,10 +248,11 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
   function row(m){
     var r=document.createElement("div");r.className="row";
     var ps=Array.isArray(m.photos)&&m.photos.length?m.photos:(m.photo?[m.photo]:[]);
-    var t=document.createElement(ps.length?"img":"div");t.className="thumb";
-    if(ps.length){t.src=ps[0];t.alt=""}
+    var vid=ps.length&&/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(ps[0]);
+    var t=document.createElement(ps.length?(vid?"video":"img"):"div");t.className="thumb";
+    if(ps.length){if(vid){t.muted=true;t.preload="metadata";t.src=ps[0]+"#t=0.1"}else{t.src=ps[0];t.alt=""}}
     var mid=document.createElement("div"),b=document.createElement("b"),s=document.createElement("span");
-    b.textContent=m.title;s.className="meta";s.textContent=[m.date,m.place,ps.length+(ps.length===1?" photo":" photos")].filter(Boolean).join(" · ");
+    b.textContent=m.title;s.className="meta";s.textContent=[m.date,m.place,ps.length+(ps.length===1?" item":" items")].filter(Boolean).join(" · ");
     mid.appendChild(b);mid.appendChild(s);
     var tools=document.createElement("div");tools.className="tools";
     var rm=document.createElement("button");rm.type="button";rm.className="rm";rm.textContent="Delete";
@@ -246,15 +270,15 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
     });
     var add=document.createElement("button");add.type="button";add.className="rm";add.textContent="Add photos";
     add.addEventListener("click",function(){
-      var inp=document.createElement("input");inp.type="file";inp.multiple=true;inp.accept="image/png,image/jpeg,image/webp,image/gif";
+      var inp=document.createElement("input");inp.type="file";inp.multiple=true;inp.accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov";
       inp.addEventListener("change",async function(){
         var files=Array.prototype.slice.call(inp.files);if(!files.length)return;
         var st=$("#status");add.disabled=true;
         try{
           var up=await uploadFiles(files,st);
-          if(!up.photos.length)throw new Error("None of the photos could be uploaded. Try again.");
+          if(!up.photos.length)throw new Error("None of the files could be uploaded. "+lastErr);
           await api("/api/memories",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"addPhotos",id:m.id,photos:up.photos})});
-          say(st,up.failed?"Added "+up.photos.length+" of "+files.length+" photos. "+up.failed+" could not upload.":"Added "+up.photos.length+(up.photos.length===1?" photo.":" photos."),up.failed?"bad":"good");
+          say(st,up.failed?"Added "+up.photos.length+" of "+files.length+" files. "+up.failed+" could not upload.":"Added "+up.photos.length+(up.photos.length===1?" file.":" files."),up.failed?"bad":"good");
         }catch(err){
           if(err.status===401){showLogin("Your session ended. Sign in again.");return}
           say(st,err.message,"bad");
@@ -271,5 +295,6 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
   if(pw){api("/api/login",{method:"POST"}).then(showMain).catch(function(){showLogin("")})}
 })();
 </script>
+<script type="module">import {uploadPresigned} from "/vendor/blob-client.js";window.__uploadVideo=uploadPresigned;</script>
 </body>
 </html>

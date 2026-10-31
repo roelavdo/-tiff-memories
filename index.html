@@ -50,9 +50,12 @@ button,input,textarea{font:inherit;color:inherit}
 .strip::-webkit-scrollbar{display:none}
 .photo{position:relative;display:block;flex:none;width:100%;padding:0;border:0;background:var(--surface);color:#fff;
   cursor:pointer;text-align:left;overflow:hidden}
-.photo img{display:block;width:100%;height:auto}
+.photo img,.photo video{display:block;width:100%;height:auto}
 .photo .cap{position:absolute;left:0;bottom:0;display:flex;flex-direction:column;gap:2px;pointer-events:none;color:#fff;mix-blend-mode:difference;
   padding:0 16px calc(env(safe-area-inset-bottom,0px) + 22px)}
+.vmute{position:absolute;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 48px);z-index:2;background:none;border:0;padding:4px 0;
+  color:#fff;mix-blend-mode:difference;cursor:pointer}
+.vmute:hover{text-decoration:underline}
 .cap b{font-family:var(--f-display);font-weight:500;font-size:clamp(1.1rem,1.6vw,1.5rem);line-height:1.1}
 .photo.plain{aspect-ratio:4/5}
 .photo .day{position:absolute;left:16px;top:50%;transform:translateY(-50%);font-family:var(--f-display);font-style:italic;
@@ -68,7 +71,7 @@ button,input,textarea{font:inherit;color:inherit}
   .strip::-webkit-scrollbar-thumb{background:#8a8a8a}
   .strip::-webkit-scrollbar-track{background:var(--bg)}
   .photo{width:auto;height:100%}
-  .photo img{height:100%;width:auto;max-width:none}
+  .photo img,.photo video{height:100%;width:auto;max-width:none}
   .empty{width:100vw;margin-inline:calc(-1*clamp(16px,2.7vw,52px))}
 }
 
@@ -76,7 +79,7 @@ button,input,textarea{font:inherit;color:inherit}
 .sheet{position:fixed;inset:0;z-index:50;background:rgba(6,6,9,.82);display:flex;justify-content:center;align-items:flex-start;overflow-y:auto;padding:clamp(12px,4vw,48px)}
 .sheet[hidden]{display:none!important}
 .paper{background:var(--bg);border:1px solid var(--line);max-width:860px;width:100%;position:relative}
-.paper img{display:block;max-width:100%;max-height:82vh;width:auto;height:auto;margin:0 auto 4px;background:var(--surface)}
+.paper img,.paper video{display:block;max-width:100%;max-height:82vh;width:auto;height:auto;margin:0 auto 4px;background:var(--surface)}
 .paper .body{padding:clamp(18px,3.4vw,40px)}
 .paper h2{font-family:var(--f-display);font-weight:500;font-size:clamp(2rem,5vw,3.4rem);line-height:1;margin:10px 0 0}
 .meta{display:flex;gap:6px 22px;flex-wrap:wrap;color:var(--muted);margin-top:14px}
@@ -132,7 +135,14 @@ input[type=file]{max-width:100%;color:var(--muted)}
   function short(s){var p=pd(s);return p?p.d+" "+MONTHS[p.m-1]+" "+p.y:"Undated"}
   function pad(n,w){n=String(n);while(n.length<w)n="0"+n;return n}
   function pics(m){var a=Array.isArray(m.photos)?m.photos:[];if(!a.length&&typeof m.photo==="string"&&m.photo)a=[m.photo];return a.filter(function(u){return typeof u==="string"&&u})}
-  function imgTag(src,m,lazy){return '<img data-photo alt="'+esc(m.title)+'" decoding="async"'+(lazy?' loading="lazy"':'')+' src="'+esc(src)+'">'}
+  function isVideo(u){return /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(u)}
+  function imgTag(src,m,lazy,inSheet){
+    if(isVideo(src)){
+      return inSheet?'<video data-photo controls playsinline preload="metadata" src="'+esc(src)+'"></video>'
+        :'<video data-photo data-autoplay muted loop playsinline preload="metadata" disablepictureinpicture src="'+esc(src)+'"></video>';
+    }
+    return '<img data-photo alt="'+esc(m.title)+'" decoding="async"'+(lazy?' loading="lazy"':'')+' src="'+esc(src)+'">';
+  }
 
   /* entry numbers follow the calendar: oldest memory is No. 001 */
   function numbered(){
@@ -140,8 +150,8 @@ input[type=file]{max-width:100%;color:var(--muted)}
     var map={};asc.forEach(function(m,i){map[m.id]=i+1});return map;
   }
   function wireImgs(root){
-    root.querySelectorAll("img[data-photo]").forEach(function(im){
-      im.addEventListener("error",function(){var p=im.parentElement;im.remove();if(p&&p.classList.contains("photo")){p.classList.add("plain")}});
+    root.querySelectorAll("[data-photo]").forEach(function(im){
+      im.addEventListener("error",function(){var p=im.parentElement;im.remove();if(p&&p.classList.contains("photo")){p.classList.add("plain");p.querySelectorAll(".vmute").forEach(function(b){b.remove()})}});
     });
   }
 
@@ -160,22 +170,38 @@ input[type=file]{max-width:100%;color:var(--muted)}
       var out="";
       for(var i=0;i<n;i++){
         var has=ps.length>0, count=n>1?' · '+n+' photos':'';
-        out+='<button type="button" class="photo'+(has?'':' plain')+'" data-open="'+esc(m.id)+'">'+(has?imgTag(ps[i],m,false):"")+
+        out+='<div role="button" tabindex="0" class="photo'+(has?'':' plain')+'" data-open="'+esc(m.id)+'">'+(has?imgTag(ps[i],m,false):"")+
+          (has&&isVideo(ps[i])?'<button type="button" class="vmute mono" data-act="mute">Unmute</button>':'')+
           (has?'':'<span class="day" aria-hidden="true">'+(p?p.d:"")+'</span>')+
-          (i===0?'<span class="cap"><span class="mono">No. '+pad(nums[m.id],3)+' · '+esc(short(m.date))+count+'</span><b>'+esc(m.title)+'</b></span>':'')+'</button>';
+          (i===0?'<span class="cap"><span class="mono">No. '+pad(nums[m.id],3)+' · '+esc(short(m.date))+count+'</span><b>'+esc(m.title)+'</b></span>':'')+'</div>';
         first=false;
       }
       return out;
     }).join("");
-    wireImgs(el);
+    wireImgs(el);watchVideos(el);
   }
+
+  /* strip videos play silently while on screen and pause when they leave */
+  var still=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var vio=("IntersectionObserver" in window&&!still)?new IntersectionObserver(function(es){es.forEach(function(e){
+    var v=e.target;if(e.isIntersecting){var p=v.play();if(p&&p.catch)p.catch(function(){})}else{v.pause();v.muted=true;syncMute(v)}})},{threshold:0.25}):null;
+  function syncMute(v){var b=v.parentElement&&v.parentElement.querySelector(".vmute");if(b)b.textContent=v.muted?"Unmute":"Mute"}
+  /* sound belongs to one video at a time */
+  function toggleMute(btn){
+    var v=btn.parentElement.querySelector("video");if(!v)return;
+    var on=v.muted;
+    document.querySelectorAll("#strip video").forEach(function(o){o.muted=true;syncMute(o)});
+    v.muted=!on;syncMute(v);
+    if(v.paused){var p=v.play();if(p&&p.catch)p.catch(function(){})}
+  }
+  function watchVideos(root){if(!vio)return;vio.disconnect();root.querySelectorAll("video[data-autoplay]").forEach(function(v){vio.observe(v)})}
 
   function renderSheet(nums){
     var sh=$("#sheet");
     var m=memories.filter(function(x){return x.id===openId})[0];
     if(!m){sh.hidden=true;sh.innerHTML="";document.body.style.overflow="";return}
     var meta='<span>'+esc(short(m.date))+'</span>'+(m.place?'<span>'+esc(m.place)+'</span>':'')+(m.people?'<span>With '+esc(m.people)+'</span>':'');
-    sh.innerHTML='<div class="paper"><button type="button" class="close mono" data-act="close">Close</button>'+pics(m).map(function(u){return imgTag(u,m,true)}).join("")+
+    sh.innerHTML='<div class="paper"><button type="button" class="close mono" data-act="close">Close</button>'+pics(m).map(function(u){return imgTag(u,m,true,true)}).join("")+
       '<div class="body"><span class="mono" style="color:var(--accent)">Entry '+pad(nums[m.id],3)+'</span><h2>'+esc(m.title)+'</h2><div class="meta">'+meta+'</div>'+
       (m.story?'<div class="story">'+esc(m.story)+'</div>':'')+'</div></div>';
     sh.hidden=false;document.body.style.overflow="hidden";
@@ -189,6 +215,7 @@ input[type=file]{max-width:100%;color:var(--muted)}
     if(!t)return;
     if(t.dataset.open){openId=t.dataset.open;renderAll();var c=$("#sheet .close");if(c)c.focus();return}
     if(t.dataset.act==="close")closeSheet();
+    else if(t.dataset.act==="mute")toggleMute(t);
   });
   $("#sheet").addEventListener("click",function(e){if(e.target===e.currentTarget)closeSheet()});
   document.addEventListener("keydown",function(e){if(e.key==="Escape"&&openId)closeSheet()});
@@ -207,7 +234,8 @@ input[type=file]{max-width:100%;color:var(--muted)}
   },{passive:false});
   document.addEventListener("keydown",function(e){
     if(openId)return;
-    var k=e.key;
+    var k=e.key,tg=e.target;
+    if(tg&&tg.classList&&tg.classList.contains("photo")&&(k==="Enter"||k===" ")){e.preventDefault();tg.click();return}
     if(k==="ArrowRight"||k==="ArrowDown"||k==="PageDown"||k===" "){e.preventDefault();step(1)}
     else if(k==="ArrowLeft"||k==="ArrowUp"||k==="PageUp"){e.preventDefault();step(-1)}
   });
