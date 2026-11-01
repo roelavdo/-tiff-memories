@@ -47,20 +47,20 @@
 <main id="page"></main>
 <div class="foot mono">TIFF &copy;<span id="year"></span></div>
 <script src="/site.js"></script>
+<script src="/editor.js"></script>
 <script>
 (function(){
-  var S=window.Site,page=document.getElementById("page");
+  var S=window.Site,Ed=window.Editor,page=document.getElementById("page");
   var slug=decodeURIComponent((location.pathname.split("/").filter(Boolean).pop()||"")).toLowerCase();
-  S.load().then(function(d){
-    var p=S.buildPeople(d.memories,d.people).filter(function(x){return x.slug===slug})[0];
-    if(!p){
-      page.innerHTML='<div class="missing"><h1>Not found</h1><p class="note">There is nobody with this name yet.</p><p><a class="mono" href="/people">All people</a></p></div>';
-      return;
-    }
-    document.title=p.name+" · TIFF";
-    var hero=p.banner
-      ?'<div class="hero">'+(S.isVideo(p.banner)?'<video autoplay muted loop playsinline preload="metadata" src="'+S.esc(p.banner)+'"></video>':'<img alt="" src="'+S.esc(p.banner)+'">')+'<h1>'+S.esc(p.name)+'</h1></div>'
-      :'<div class="hero nob"><h1>'+S.esc(p.name)+'</h1></div>';
+  var cur=null,admin=false,editing=false,newFile=null,bar=null;
+  function heroHtml(banner,name,ed){
+    var h1='<h1'+(ed?' contenteditable="plaintext-only" data-ph="Name" id="e-name"':'')+'>'+S.esc(name)+'</h1>';
+    return banner
+      ?'<div class="hero">'+(S.isVideo(banner)||(newFile&&/^blob:/.test(banner)&&Ed.isVideoFile(newFile))?'<video autoplay muted loop playsinline preload="metadata" src="'+S.esc(banner)+'"></video>':'<img alt="" src="'+S.esc(banner)+'">')+h1+'</div>'
+      :'<div class="hero nob">'+h1+'</div>';
+  }
+  function draw(){
+    var p=cur,ed=editing;
     var socials=(p.socials||[]).map(function(s){
       return '<li><a class="mono" href="'+S.esc(s.url)+'" target="_blank" rel="noopener noreferrer"><span>'+S.esc(s.label)+'</span><span aria-hidden="true">&#8599;</span></a></li>';
     }).join("");
@@ -69,11 +69,91 @@
     var tags=media.map(function(u){
       return S.isVideo(u)?'<video controls muted loop playsinline preload="metadata" data-autoplay src="'+S.esc(u)+'"></video>':'<img alt="'+S.esc(p.name)+'" decoding="async" loading="lazy" src="'+S.esc(u)+'">';
     }).join("");
-    page.innerHTML=hero+
-      '<section class="info"><div><a class="back mono" href="/people">&larr; People</a>'+(p.bio?'<p class="bio">'+S.esc(p.bio)+'</p>':'<p class="note">No bio yet.</p>')+'</div>'+
-      (socials?'<ul class="socials">'+socials+'</ul>':'<div></div>')+'</section>'+
+    var bioHtml=ed?'<p class="bio" id="e-bio" contenteditable="plaintext-only" data-ph="Write a bio...">'+S.esc(p.bio)+'</p>'
+      :(p.bio?'<p class="bio">'+S.esc(p.bio)+'</p>':'<p class="note">No bio yet.</p>');
+    var right=ed?'<div><div class="soced" id="e-soc"></div></div>':(socials?'<ul class="socials">'+socials+'</ul>':'<div></div>');
+    page.innerHTML=heroHtml(p.banner,p.name,ed)+
+      '<section class="info"><div><a class="back mono" href="/people">&larr; People</a>'+bioHtml+'</div>'+right+'</section>'+
       (media.length?'<section class="photos"><h2 class="mono">'+S.esc(p.name)+' in '+p.mems.length+(p.mems.length===1?' memory':' memories')+'</h2><div class="prow">'+tags+'</div></section>':'');
+    document.body.classList.toggle("editing",ed);
+    if(ed){
+      var box=document.getElementById("e-soc");
+      (p.socials&&p.socials.length?p.socials:[]).forEach(function(s){addRow(box,s.label,s.url)});
+      var add=Ed.btn("+ Add link",function(){addRow(box,"","")});add.className="mono";
+      box.parentNode.appendChild(add);
+      var nm=document.getElementById("e-name");
+      nm.addEventListener("keydown",function(e){if(e.key==="Enter")e.preventDefault()});
+    }
     S.watchVideos(page);
+  }
+  function addRow(box,l,u){
+    var r=document.createElement("div");r.className="r";
+    r.innerHTML='<input class="lab" maxlength="30" placeholder="Instagram" value="'+S.esc(l)+'"><input class="url" maxlength="300" placeholder="https://..." value="'+S.esc(u)+'">';
+    var x=document.createElement("button");x.type="button";x.textContent="\u00d7";x.setAttribute("aria-label","Remove link");
+    x.addEventListener("click",function(){r.remove()});r.appendChild(x);box.appendChild(r);
+  }
+  function readDom(){
+    cur.name=(document.getElementById("e-name").textContent||"").replace(/\s+/g," ").trim();
+    cur.bio=(document.getElementById("e-bio").innerText||"").replace(/\n{3,}/g,"\n\n").trim();
+    cur.socials=[].slice.call(document.querySelectorAll("#e-soc .r")).map(function(r){
+      return {label:r.querySelector(".lab").value.trim(),url:r.querySelector(".url").value.trim()};
+    }).filter(function(s){return s.label&&/^https?:\/\//i.test(s.url)});
+  }
+  function toolbar(){
+    if(bar)bar.remove();
+    bar=Ed.bar();
+    if(!editing){bar.appendChild(Ed.btn("Edit page",function(){editing=true;draw();toolbar()},"pri"));return}
+    var st=document.createElement("span");st.className="st";
+    var file=document.createElement("input");file.type="file";file.hidden=true;
+    file.accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov";
+    file.addEventListener("change",function(){
+      var f=file.files[0];if(!f)return;
+      readDom();newFile=f;cur.banner=URL.createObjectURL(f);
+      if(Ed.isVideoFile(f)&&!/^blob:/.test(cur.banner))cur.banner="";
+      draw();toolbar();
+    });
+    var save=Ed.btn("Save",async function(){
+      readDom();
+      if(!cur.name){Ed.say(st,"Add a name first.","bad");return}
+      save.disabled=true;Ed.say(st,"Saving.");
+      try{
+        var banner=newFile?await Ed.upload(newFile,function(n){Ed.say(st,"Uploading banner "+n+"%")}):(/^blob:/.test(cur.banner)?"":cur.banner);
+        var r=await Ed.api("/api/people",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",person:{id:cur.id||undefined,name:cur.name,bio:cur.bio,socials:cur.socials,banner:banner}})});
+        location.href="/people/"+r.person.slug;
+      }catch(err){
+        if(err.status===401){Ed.say(st,"Session ended. Reload with ?edit and sign in again.","bad")}else Ed.say(st,err.message,"bad");
+        save.disabled=false;
+      }
+    },"pri");
+    bar.appendChild(save);
+    bar.appendChild(Ed.btn("Change banner",function(){file.click()}));
+    bar.appendChild(Ed.btn("Remove banner",function(){readDom();cur.banner="";newFile=null;draw();toolbar()}));
+    if(cur.id){
+      var del=Ed.btn("Delete person",function(){
+        del.textContent="Tap again to delete for good";
+        del.onclick=async function(){
+          try{await Ed.api("/api/people",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"delete",id:cur.id})});location.href="/people"}
+          catch(err){Ed.say(st,err.message,"bad")}
+        };
+      });
+      bar.appendChild(del);
+    }
+    bar.appendChild(Ed.btn("Cancel",function(){location.href=location.pathname}));
+    bar.appendChild(file);bar.appendChild(st);
+  }
+  S.load().then(function(d){
+    var p=S.buildPeople(d.memories,d.people).filter(function(x){return x.slug===slug})[0];
+    return Ed.init().then(function(a){admin=a;return p});
+  }).then(function(p){
+    if(!p&&admin&&slug){p={slug:slug,name:slug.replace(/-/g," "),bio:"",socials:[],banner:"",mems:[]}}
+    if(!p){
+      page.innerHTML='<div class="missing"><h1>Not found</h1><p class="note">There is nobody with this name yet.</p><p><a class="mono" href="/people">All people</a></p></div>';
+      return;
+    }
+    cur=p;document.title=p.name+" \u00b7 TIFF";
+    editing=admin&&/[?&]edit\b/.test(location.search);
+    draw();
+    if(admin)toolbar();
   });
 })();
 </script>

@@ -34,6 +34,7 @@
 <main class="pgrid" id="grid"></main>
 <div class="foot mono">TIFF &copy;<span id="year"></span></div>
 <script src="/site.js"></script>
+<script src="/editor.js"></script>
 <script>
 (function(){
   var S=window.Site,grid=document.getElementById("grid"),bg=document.getElementById("pbg");
@@ -71,6 +72,22 @@
       a.addEventListener("mouseenter",on);a.addEventListener("mouseleave",off);
       a.addEventListener("focus",on);a.addEventListener("blur",off);
     });
+  });
+  var Ed=window.Editor;
+  Ed.init().then(function(ok){
+    if(!ok)return;
+    var bar=Ed.bar(),inp=document.createElement("input"),st=document.createElement("span");
+    inp.placeholder="New person's name";inp.maxLength=80;st.className="st";
+    var go=Ed.btn("Create and edit page",async function(){
+      var n=inp.value.trim();if(!n){Ed.say(st,"Type a name first.","bad");return}
+      go.disabled=true;Ed.say(st,"Creating.");
+      try{
+        var r=await Ed.api("/api/people",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",person:{name:n}})});
+        location.href="/people/"+r.person.slug+"?edit";
+      }catch(e){Ed.say(st,e.message,"bad");go.disabled=false}
+    },"pri");
+    inp.addEventListener("keydown",function(e){if(e.key==="Enter")go.click()});
+    bar.appendChild(inp);bar.appendChild(go);bar.appendChild(st);
   });
 })();
 </script>
