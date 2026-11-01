@@ -47,6 +47,8 @@ button,input,textarea{font:inherit;color:inherit}
 .bar a:hover,.bar button:hover{text-decoration:underline}
 .bar .mid{text-align:center}
 .bar .end{text-align:right}
+.bar .mid{display:flex;gap:clamp(16px,4vw,40px);justify-content:center}
+.bar a[aria-current]{text-decoration:underline}
 .foot{position:fixed;right:clamp(16px,3vw,40px);bottom:calc(env(safe-area-inset-bottom,0px) + 22px);z-index:20;color:#fff;mix-blend-mode:difference;pointer-events:none}
 .prog{display:none}
 
@@ -59,6 +61,13 @@ button,input,textarea{font:inherit;color:inherit}
 .photo img,.photo video{display:block;width:100%;height:auto}
 .photo .cap{position:absolute;left:0;bottom:0;display:flex;flex-direction:column;gap:2px;pointer-events:none;color:#fff;mix-blend-mode:difference;
   padding:0 16px calc(env(safe-area-inset-bottom,0px) + 22px)}
+.peoplebox{position:fixed;top:calc(env(safe-area-inset-top,0px) + 52px);left:50%;transform:translateX(-50%);z-index:30;width:min(360px,calc(100vw - 32px));
+  max-height:60vh;overflow:auto;background:var(--bg);color:var(--ink);border:1px solid var(--line);padding:6px 0}
+.peoplebox button{display:flex;justify-content:space-between;gap:16px;width:100%;background:none;border:0;padding:10px 16px;cursor:pointer;text-align:left;color:inherit}
+.peoplebox button:hover{background:var(--surface)}
+.peoplebox .on{text-decoration:underline}
+.pchip{display:inline-block;text-decoration:none;background:none;border:1px solid var(--line);border-radius:999px;padding:2px 12px;margin:2px 6px 2px 0;cursor:pointer;color:var(--ink);font:inherit}
+.pchip:hover{border-color:var(--ink)}
 .vmute{position:absolute;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 48px);z-index:2;background:none;border:0;padding:4px 0;
   color:#fff;mix-blend-mode:difference;cursor:pointer}
 .vmute:hover{text-decoration:underline}
@@ -119,7 +128,7 @@ input[type=file]{max-width:100%;color:var(--muted)}
 <body>
 <div class="bar mono"><div class="bar-in">
   <a href="#top" id="top">TIFF</a>
-  <span class="mid">Memories</span>
+  <span class="mid"><a href="/" aria-current="page">Memories</a><a href="/people">People</a></span>
   <span class="end"><button id="theme" type="button" aria-label="Switch light or dark">Theme</button></span>
 </div></div>
 <div class="prog" aria-hidden="true"><i id="progbar"></i></div>
@@ -132,7 +141,7 @@ input[type=file]{max-width:100%;color:var(--muted)}
 <script>
 (function(){
   var MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  var memories=[], loaded=false, loadError=false, openId=null;
+  var memories=[], loaded=false, loadError=false, openId=null, filterPerson="", peopleOpen=false;
   var $=function(s){return document.querySelector(s)};
   var desk=function(){return window.matchMedia("(min-width: 821px)").matches};
 
@@ -142,6 +151,23 @@ input[type=file]{max-width:100%;color:var(--muted)}
   function pad(n,w){n=String(n);while(n.length<w)n="0"+n;return n}
   /* newest upload first; memories from memories.json have no upload time and come last */
   function newer(a,b){var ca=a.createdAt||0,cb=b.createdAt||0;if(ca!==cb)return cb-ca;return (a.date||"")<(b.date||"")?1:(a.date||"")>(b.date||"")?-1:0}
+  /* people tags: names in "Who was there" are separated by commas */
+  function names(m){var p=m.people;var a=Array.isArray(p)?p:String(p||"").split(/[,;\n]+/);return a.map(function(x){return String(x).trim()}).filter(Boolean)}
+  function keyOf(n){return n.toLowerCase()}
+  function slugOf(n){return String(n||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")}
+  function peopleIndex(){
+    var map={};
+    memories.forEach(function(m){names(m).forEach(function(n){var k=keyOf(n);if(!map[k])map[k]={key:k,name:n,count:0};map[k].count++})});
+    return Object.keys(map).map(function(k){return map[k]}).sort(function(a,b){return b.count-a.count||(a.name<b.name?-1:1)});
+  }
+  function shown(){
+    return filterPerson?memories.filter(function(m){return names(m).some(function(n){return keyOf(n)===filterPerson})}):memories;
+  }
+  function renderPeople(){}
+  function setPerson(key){
+    filterPerson=key;openId=null;confirming=false;peopleOpen=false;renderAll();
+    var s=$("#strip");if(s){s.scrollLeft=0;s.scrollTop=0}
+  }
   function pics(m){var a=Array.isArray(m.photos)?m.photos:[];if(!a.length&&typeof m.photo==="string"&&m.photo)a=[m.photo];return a.filter(function(u){return typeof u==="string"&&u})}
   function isVideo(u){return /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(u)}
   function imgTag(src,m,lazy,inSheet){
@@ -173,7 +199,7 @@ input[type=file]{max-width:100%;color:var(--muted)}
       return;
     }
     var first=true;
-    el.innerHTML=memories.map(function(m){
+    el.innerHTML=shown().map(function(m){
       var ps=pics(m), p=pd(m.date), n=Math.max(ps.length,1);
       var out="";
       for(var i=0;i<n;i++){
@@ -208,7 +234,7 @@ input[type=file]{max-width:100%;color:var(--muted)}
     var sh=$("#sheet");
     var m=memories.filter(function(x){return x.id===openId})[0];
     if(!m){sh.hidden=true;sh.innerHTML="";document.body.style.overflow="";return}
-    var meta='<span>'+esc(short(m.date))+'</span>'+(m.place?'<span>'+esc(m.place)+'</span>':'')+(m.people?'<span>With '+esc(m.people)+'</span>':'');
+    var meta='<span>'+esc(short(m.date))+'</span>'+(m.place?'<span>'+esc(m.place)+'</span>':'')+(names(m).length?'<span>With '+names(m).map(function(n){return '<a class="pchip" href="/people/'+esc(slugOf(n))+'">'+esc(n)+'</a>'}).join("")+'</span>':'');
     sh.innerHTML='<div class="paper"><button type="button" class="close mono" data-act="close">Close</button>'+pics(m).map(function(u){return imgTag(u,m,true,true)}).join("")+
       '<div class="body"><span class="mono" style="color:var(--accent)">Entry '+pad(nums[m.id],3)+'</span><h2>'+esc(m.title)+'</h2><div class="meta">'+meta+'</div>'+
       (m.story?'<div class="story">'+esc(m.story)+'</div>':'')+'</div></div>';
@@ -216,17 +242,21 @@ input[type=file]{max-width:100%;color:var(--muted)}
     wireImgs(sh);
   }
 
-  function renderAll(){var nums=numbered();renderStrip(nums);renderSheet(nums);updateProg()}
+  function renderAll(){var nums=numbered();renderStrip(nums);renderSheet(nums);renderPeople();updateProg()}
 
   document.addEventListener("click",function(e){
-    var t=e.target.closest("[data-open],[data-act]");
+    if(peopleOpen&&!e.target.closest("#peoplebox,#peopleBtn")){peopleOpen=false;renderPeople()}
+    var t=e.target.closest("[data-open],[data-act],[data-person]");
     if(!t)return;
+    if(t.dataset.person){setPerson(t.dataset.person);return}
     if(t.dataset.open){openId=t.dataset.open;renderAll();var c=$("#sheet .close");if(c)c.focus();return}
     if(t.dataset.act==="close")closeSheet();
+    else if(t.dataset.act==="people"){peopleOpen=!peopleOpen;renderPeople()}
+    else if(t.dataset.act==="people-all")setPerson("");
     else if(t.dataset.act==="mute")toggleMute(t);
   });
   $("#sheet").addEventListener("click",function(e){if(e.target===e.currentTarget)closeSheet()});
-  document.addEventListener("keydown",function(e){if(e.key==="Escape"&&openId)closeSheet()});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"){if(openId)closeSheet();else if(peopleOpen){peopleOpen=false;renderPeople()}}});
   function closeSheet(){openId=null;renderAll()}
 
   /* desktop: the wheel and arrow keys scroll the row sideways, freely */

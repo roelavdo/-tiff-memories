@@ -92,11 +92,25 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
       <div class="fld full"><label class="mono" for="f-title">Title</label><input type="text" id="f-title" maxlength="120" required></div>
       <div class="fld"><label class="mono" for="f-date">Date</label><input type="date" id="f-date"></div>
       <div class="fld"><label class="mono" for="f-place">Place</label><input type="text" id="f-place" maxlength="120"></div>
-      <div class="fld full"><label class="mono" for="f-people">Who was there</label><input type="text" id="f-people" maxlength="200"></div>
+      <div class="fld full"><label class="mono" for="f-people">Who was there (names separated by commas)</label><input type="text" id="f-people" maxlength="400" placeholder="Ana, Besi, Klea"></div>
       <div class="fld full"><label class="mono" for="f-story">The story</label><textarea id="f-story" maxlength="6000"></textarea></div>
       <div class="fld full"><label class="mono" for="f-photo">Photos and videos</label><input type="file" id="f-photo" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" multiple><div class="previews" id="previews"></div></div>
       <div class="actions"><button class="go mono" id="save" type="submit">Save memory</button><span class="status" id="status" role="status" aria-live="polite"></span></div>
     </form>
+
+    <section class="list" id="peopleSec">
+      <h2>People</h2>
+      <p class="lede" style="margin-top:8px">Each person gets a star on the People page, a background banner (photo or video) that shows when you hover the star, and a page with their bio, socials and every photo they are tagged in. Use the same name as in "Who was there".</p>
+      <form id="pform" autocomplete="off">
+        <input type="hidden" id="p-id">
+        <div class="fld full"><label class="mono" for="p-name">Name</label><input type="text" id="p-name" maxlength="80" required></div>
+        <div class="fld full"><label class="mono" for="p-bio">Bio</label><textarea id="p-bio" maxlength="4000"></textarea></div>
+        <div class="fld full"><label class="mono" for="p-soc">Socials (one per line: Label | link)</label><textarea id="p-soc" style="min-height:5.5rem" placeholder="Instagram | https://instagram.com/name&#10;TikTok | https://tiktok.com/@name"></textarea></div>
+        <div class="fld full"><label class="mono" for="p-banner">Background banner (photo or video)</label><input type="file" id="p-banner" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"><div class="hint" id="p-note"></div></div>
+        <div class="actions"><button class="go mono" id="p-save" type="submit">Save person</button><button class="ghost mono" id="p-cancel" type="button" hidden>Cancel edit</button><span class="status" id="p-status" role="status" aria-live="polite"></span></div>
+      </form>
+      <div class="rows" id="prows"></div>
+    </section>
 
     <section class="list">
       <h2>Your memories</h2>
@@ -125,7 +139,7 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
     });
   }
 
-  function showMain(){$("#loginView").hidden=true;$("#mainView").hidden=false;$("#out").hidden=false;$("#f-date").value=today();loadList()}
+  function showMain(){$("#loginView").hidden=true;$("#mainView").hidden=false;$("#out").hidden=false;$("#f-date").value=today();loadList();loadPeople()}
   function showLogin(msg){
     pw="";try{sessionStorage.removeItem("tiff-pw")}catch(_){}
     $("#mainView").hidden=true;$("#loginView").hidden=false;$("#out").hidden=true;
@@ -289,6 +303,81 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
       inp.click();
     });
     tools.appendChild(add);tools.appendChild(rm);
+    r.appendChild(t);r.appendChild(mid);r.appendChild(tools);
+    return r;
+  }
+
+  /* people */
+  var editing=null;
+  function parseSocials(t){return String(t||"").split(/\n+/).map(function(l){var i=l.indexOf("|");return i<0?null:{label:l.slice(0,i).trim(),url:l.slice(i+1).trim()}}).filter(function(s){return s&&s.label&&/^https?:\/\//i.test(s.url)})}
+  function socialsText(a){return (a||[]).map(function(s){return s.label+" | "+s.url}).join("\n")}
+  async function uploadOne(file,label,st){
+    if(isVideoFile(file))return uploadVideo(file,label,st);
+    var data=await prepare(file);
+    var base=(file.name||"banner").replace(/\.[^.]+$/,"");
+    var up=await api("/api/photo?name="+encodeURIComponent(base),{method:"POST",headers:{"Content-Type":data.type||"image/jpeg"},body:data});
+    return up.url;
+  }
+  function resetPerson(){
+    $("#pform").reset();$("#p-id").value="";editing=null;$("#p-note").textContent="";$("#p-cancel").hidden=true;$("#p-save").textContent="Save person";
+  }
+  $("#p-cancel").addEventListener("click",function(){resetPerson();say($("#p-status"),"")});
+  $("#pform").addEventListener("submit",async function(e){
+    e.preventDefault();
+    var st=$("#p-status"),btn=$("#p-save"),name=$("#p-name").value.trim();
+    if(!name){say(st,"Add a name first.","bad");return}
+    btn.disabled=true;say(st,"Saving.");
+    try{
+      var banner=editing&&editing.banner||"",f=$("#p-banner").files[0];
+      if(f)banner=await uploadOne(f,"Uploading the banner.",st);
+      await api("/api/people",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",person:{
+        id:$("#p-id").value||undefined,name:name,bio:$("#p-bio").value,socials:parseSocials($("#p-soc").value),banner:banner}})});
+      resetPerson();say(st,"Saved. The star is on the People page.","good");loadPeople();
+    }catch(err){
+      if(err.status===401){showLogin("Your session ended. Sign in again.");return}
+      say(st,err.message,"bad");
+    }
+    btn.disabled=false;
+  });
+  function loadPeople(){
+    var rows=$("#prows");
+    fetch("/api/people",{cache:"no-store"}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"Could not load.");return j})}).then(function(list){
+      rows.textContent="";
+      if(!list.length){var d=document.createElement("div");d.className="empty";d.textContent="No people yet. Add the first one above.";rows.appendChild(d);return}
+      list.forEach(function(p){rows.appendChild(personRow(p))});
+    }).catch(function(err){rows.textContent="";var d=document.createElement("div");d.className="empty";d.textContent="The list could not be loaded: "+err.message;rows.appendChild(d)});
+  }
+  function personRow(p){
+    var r=document.createElement("div");r.className="row";
+    var vid=p.banner&&/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(p.banner);
+    var t=document.createElement(p.banner?(vid?"video":"img"):"div");t.className="thumb";
+    if(p.banner){if(vid){t.muted=true;t.preload="metadata";t.src=p.banner+"#t=0.1"}else{t.src=p.banner;t.alt=""}}
+    var mid=document.createElement("div"),b=document.createElement("b"),s=document.createElement("span");
+    b.textContent=p.name;s.className="meta";
+    s.textContent=["/people/"+p.slug,(p.socials||[]).length+" socials",p.banner?(vid?"video banner":"photo banner"):"no banner"].join(" · ");
+    mid.appendChild(b);mid.appendChild(s);
+    var tools=document.createElement("div");tools.className="tools";
+    var ed=document.createElement("button");ed.type="button";ed.className="rm";ed.textContent="Edit";
+    ed.addEventListener("click",function(){
+      editing=p;$("#p-id").value=p.id;$("#p-name").value=p.name;$("#p-bio").value=p.bio||"";$("#p-soc").value=socialsText(p.socials);
+      $("#p-banner").value="";$("#p-note").textContent=p.banner?"The current banner stays unless you choose a new file.":"";
+      $("#p-cancel").hidden=false;$("#p-save").textContent="Save changes";say($("#p-status"),"");
+      $("#pform").scrollIntoView({behavior:"smooth",block:"center"});$("#p-name").focus();
+    });
+    var rm=document.createElement("button");rm.type="button";rm.className="rm";rm.textContent="Delete";
+    rm.addEventListener("click",function(){
+      tools.textContent="";
+      var yes=document.createElement("button");yes.type="button";yes.className="sure mono";yes.textContent="Delete for good";
+      var no=document.createElement("button");no.type="button";no.className="rm";no.textContent="Keep";
+      no.addEventListener("click",function(){tools.textContent="";tools.appendChild(ed);tools.appendChild(rm)});
+      yes.addEventListener("click",function(){
+        yes.disabled=true;
+        api("/api/people",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"delete",id:p.id})})
+          .then(loadPeople).catch(function(err){say($("#p-status"),err.message,"bad");loadPeople()});
+      });
+      tools.appendChild(yes);tools.appendChild(no);
+    });
+    tools.appendChild(ed);tools.appendChild(rm);
     r.appendChild(t);r.appendChild(mid);r.appendChild(tools);
     return r;
   }

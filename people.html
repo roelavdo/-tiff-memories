@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..800&family=Hanken+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/site.css">
+<title>People · TIFF Memories</title>
+<style>
+.pbg{position:fixed;inset:0;z-index:-1;pointer-events:none;background:var(--bg)}
+.pbg>*{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s ease}
+.pbg>.on{opacity:1}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:clamp(28px,5vw,56px) 16px;
+  padding:calc(env(safe-area-inset-top,0px) + 120px) clamp(16px,3vw,52px) 110px;min-height:100vh;align-content:start}
+.pstar{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;text-decoration:none;color:#fff;mix-blend-mode:difference;transition:opacity .3s ease}
+.pstar svg{width:clamp(72px,8vw,104px);height:auto;display:block;margin-bottom:12px}
+.pstar b{font-weight:400}
+.pgrid.hov .pstar:not(.hot){opacity:0}
+.pempty{grid-column:1/-1;padding-top:12vh}
+.pempty h1{font-family:var(--f-display);font-weight:500;font-size:clamp(2.4rem,7vw,5rem);line-height:1;margin:0 0 14px}
+</style>
+</head>
+<body>
+<div class="bar mono"><div class="bar-in">
+  <a href="/">TIFF</a>
+  <span class="mid"><a href="/">Memories</a><a href="/people" aria-current="page">People</a></span>
+  <span class="end"><button id="theme" type="button" aria-label="Switch light or dark">Theme</button></span>
+</div></div>
+<div class="pbg" id="pbg" aria-hidden="true"></div>
+<main class="pgrid" id="grid"></main>
+<div class="foot mono">TIFF &copy;<span id="year"></span></div>
+<script src="/site.js"></script>
+<script>
+(function(){
+  var S=window.Site,grid=document.getElementById("grid"),bg=document.getElementById("pbg");
+  var STAR='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.5l3.1 6.9 7.4.8-5.5 5 1.6 7.4L12 18l-6.6 3.6 1.6-7.4-5.5-5 7.4-.8z"/></svg>';
+  var still=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  S.load().then(function(d){
+    var list=S.buildPeople(d.memories,d.people);
+    if(!list.length){
+      grid.innerHTML='<div class="pempty"><h1>No people yet</h1><p class="note">People appear here when you add their names under "Who was there" on a memory, or create them in the portal.</p></div>';
+      return;
+    }
+    grid.innerHTML=list.map(function(p){
+      var n=p.mems.length;
+      return '<a class="pstar mono" href="/people/'+S.esc(p.slug)+'" data-slug="'+S.esc(p.slug)+'">'+STAR+
+        '<b>'+S.esc(p.name)+'</b><span>'+n+(n===1?' memory':' memories')+'</span><span>View page</span></a>';
+    }).join("");
+    list.forEach(function(p){
+      if(!p.banner)return;
+      var el=document.createElement(S.isVideo(p.banner)?"video":"img");
+      el.setAttribute("data-slug",p.slug);
+      if(el.tagName==="VIDEO"){el.muted=true;el.loop=true;el.playsInline=true;el.preload="metadata";el.src=p.banner}
+      else{el.alt="";el.src=p.banner}
+      bg.appendChild(el);
+    });
+    function show(slug,on){
+      var el=bg.querySelector('[data-slug="'+slug+'"]');if(!el)return;
+      el.classList.toggle("on",on);
+      grid.classList.toggle("hov",on);
+      if(el.tagName==="VIDEO"){if(on&&!still){var pr=el.play();if(pr&&pr.catch)pr.catch(function(){})}else el.pause()}
+    }
+    grid.querySelectorAll(".pstar").forEach(function(a){
+      var slug=a.getAttribute("data-slug");
+      function on(){if(!bg.querySelector('[data-slug="'+slug+'"]'))return;a.classList.add("hot");show(slug,true)}
+      function off(){a.classList.remove("hot");show(slug,false)}
+      a.addEventListener("mouseenter",on);a.addEventListener("mouseleave",off);
+      a.addEventListener("focus",on);a.addEventListener("blur",off);
+    });
+  });
+})();
+</script>
+</body>
+</html>
