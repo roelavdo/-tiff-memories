@@ -48,7 +48,7 @@
     }
     grid.innerHTML=list.map(function(p){
       var n=p.mems.length;
-      return '<a class="pstar mono" href="/people/'+S.esc(p.slug)+'" data-slug="'+S.esc(p.slug)+'">'+STAR+
+      return '<a class="pstar mono" href="/person?p='+encodeURIComponent(p.slug)+'" data-slug="'+S.esc(p.slug)+'">'+STAR+
         '<b>'+S.esc(p.name)+'</b><span>'+n+(n===1?' memory':' memories')+'</span><span>View page</span></a>';
     }).join("");
     list.forEach(function(p){
@@ -83,11 +83,16 @@
       go.disabled=true;Ed.say(st,"Creating.");
       try{
         var r=await Ed.api("/api/people",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",person:{name:n}})});
-        location.href="/people/"+r.person.slug+"?edit";
+        location.href="/person?p="+encodeURIComponent(r.person.slug)+"&design";
       }catch(e){Ed.say(st,e.message,"bad");go.disabled=false}
     },"pri");
     inp.addEventListener("keydown",function(e){if(e.key==="Enter")go.click()});
-    bar.appendChild(inp);bar.appendChild(go);bar.appendChild(st);
+    var em=false,tg=Ed.btn("Edit people: off",function(){
+      em=!em;tg.textContent="Edit people: "+(em?"on (tap a star)":"off");
+      grid.querySelectorAll(".pstar").forEach(function(a){
+        var h=a.getAttribute("href").replace(/&design$/,"");a.setAttribute("href",em?h+"&design":h)});
+    });
+    bar.appendChild(tg);bar.appendChild(inp);bar.appendChild(go);bar.appendChild(st);
   });
 })();
 </script>

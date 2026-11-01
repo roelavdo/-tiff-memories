@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..800&family=Hanken+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Permanent+Marker&family=Special+Elite&family=Playfair+Display:wght@500;700&family=Inter:wght@400;600&display=swap">
 <link rel="stylesheet" href="/site.css">
 <title>TIFF Memories</title>
 <style>
@@ -48,10 +49,12 @@
 <div class="foot mono">TIFF &copy;<span id="year"></span></div>
 <script src="/site.js"></script>
 <script src="/editor.js"></script>
+<script src="/scrap.js"></script>
 <script>
 (function(){
   var S=window.Site,Ed=window.Editor,page=document.getElementById("page");
-  var slug=decodeURIComponent((location.pathname.split("/").filter(Boolean).pop()||"")).toLowerCase();
+  var qp=new URLSearchParams(location.search).get("p");
+  var slug=(qp||decodeURIComponent((location.pathname.split("/").filter(Boolean).pop()||""))).toLowerCase();
   var cur=null,admin=false,editing=false,newFile=null,bar=null;
   function heroHtml(banner,name,ed){
     var h1='<h1'+(ed?' contenteditable="plaintext-only" data-ph="Name" id="e-name"':'')+'>'+S.esc(name)+'</h1>';
@@ -59,7 +62,36 @@
       ?'<div class="hero">'+(S.isVideo(banner)||(newFile&&/^blob:/.test(banner)&&Ed.isVideoFile(newFile))?'<video autoplay muted loop playsinline preload="metadata" src="'+S.esc(banner)+'"></video>':'<img alt="" src="'+S.esc(banner)+'">')+h1+'</div>'
       :'<div class="hero nob">'+h1+'</div>';
   }
+  var designing=false,ctrl=null;
+  function scrapView(){
+    document.body.classList.add("scrap");
+    page.innerHTML='<a class="sback" href="/people">&larr; People</a>';
+    Scrap(page,cur.page,{edit:false});
+    S.watchVideos(page);
+  }
+  function memPhotos(){
+    var out=[];cur.mems.slice().sort(S.newer).forEach(function(m){S.pics(m).forEach(function(u){if(out.indexOf(u)<0)out.push(u)})});return out;
+  }
+  function design(){
+    designing=true;if(bar){bar.remove();bar=null}
+    var pg=cur.page&&cur.page.items&&cur.page.items.length?cur.page:{h:1400,bg:{color:"#f4efe6",image:"",pattern:"dots"},items:[
+      {id:"t1",t:"text",text:cur.name,x:80,y:70,w:760,r:-3,z:2,size:120,color:"#222222",font:"Permanent Marker"},
+      {id:"t2",t:"text",text:cur.bio||"Write something about "+cur.name+"...",x:120,y:330,w:420,r:1,z:1,size:30,color:"#333333",font:"Caveat"}]};
+    document.body.classList.add("scrap");
+    page.innerHTML='<a class="sback" href="/person?p='+encodeURIComponent(cur.slug)+'">&larr; Exit</a>';
+    var tb=null;
+    var c=Scrap(page,pg,{edit:true,onSelect:function(it){if(tb)tb.inspect(it)}});
+    tb=Scrap.toolbar(c,{Ed:Ed,memPhotos:memPhotos(),
+      cancel:function(){location.href="/person?p="+encodeURIComponent(cur.slug)},
+      save:async function(pageData,say){
+        try{
+          var r=await Ed.api("/api/people",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",person:{id:cur.id||undefined,name:cur.name,bio:cur.bio,socials:cur.socials,banner:/^blob:/.test(cur.banner)?"":cur.banner,page:pageData}})});
+          location.href="/person?p="+encodeURIComponent(r.person.slug);
+        }catch(err){say(err.status===401?"Session ended. Sign in again.":err.message,"bad")}
+      }});
+  }
   function draw(){
+    if(!editing&&!designing&&cur.page&&cur.page.items&&cur.page.items.length){scrapView();return}
     var p=cur,ed=editing;
     var socials=(p.socials||[]).map(function(s){
       return '<li><a class="mono" href="'+S.esc(s.url)+'" target="_blank" rel="noopener noreferrer"><span>'+S.esc(s.label)+'</span><span aria-hidden="true">&#8599;</span></a></li>';
@@ -102,7 +134,7 @@
   function toolbar(){
     if(bar)bar.remove();
     bar=Ed.bar();
-    if(!editing){bar.appendChild(Ed.btn("Edit page",function(){editing=true;draw();toolbar()},"pri"));return}
+    if(!editing){bar.appendChild(Ed.btn("Design page",design,"pri"));bar.appendChild(Ed.btn("Edit details",function(){editing=true;document.body.classList.remove("scrap");draw();toolbar()}));if(cur.page)bar.appendChild(Ed.btn("Reset to standard",async function(){if(!cur.id)return;try{await Ed.api("/api/people",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",person:{id:cur.id,name:cur.name,bio:cur.bio,socials:cur.socials,banner:cur.banner,page:null}})});location.reload()}catch(e){alert(e.message)}}));return}
     var st=document.createElement("span");st.className="st";
     var file=document.createElement("input");file.type="file";file.hidden=true;
     file.accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov";
@@ -119,7 +151,7 @@
       try{
         var banner=newFile?await Ed.upload(newFile,function(n){Ed.say(st,"Uploading banner "+n+"%")}):(/^blob:/.test(cur.banner)?"":cur.banner);
         var r=await Ed.api("/api/people",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",person:{id:cur.id||undefined,name:cur.name,bio:cur.bio,socials:cur.socials,banner:banner}})});
-        location.href="/people/"+r.person.slug;
+        location.href="/person?p="+encodeURIComponent(r.person.slug);
       }catch(err){
         if(err.status===401){Ed.say(st,"Session ended. Reload with ?edit and sign in again.","bad")}else Ed.say(st,err.message,"bad");
         save.disabled=false;
@@ -128,6 +160,7 @@
     bar.appendChild(save);
     bar.appendChild(Ed.btn("Change banner",function(){file.click()}));
     bar.appendChild(Ed.btn("Remove banner",function(){readDom();cur.banner="";newFile=null;draw();toolbar()}));
+    if(!cur.id){var tn=document.createElement("span");tn.className="st";tn.textContent="This name comes from memory tags. Save to give it a real page.";bar.appendChild(tn)}
     if(cur.id){
       var del=Ed.btn("Delete person",function(){
         del.textContent="Tap again to delete for good";
@@ -138,7 +171,7 @@
       });
       bar.appendChild(del);
     }
-    bar.appendChild(Ed.btn("Cancel",function(){location.href=location.pathname}));
+    bar.appendChild(Ed.btn("Cancel",function(){location.href="/person?p="+encodeURIComponent(slug)}));
     bar.appendChild(file);bar.appendChild(st);
   }
   S.load().then(function(d){
@@ -152,6 +185,8 @@
     }
     cur=p;document.title=p.name+" \u00b7 TIFF";
     editing=admin&&/[?&]edit\b/.test(location.search);
+    
+    if(admin&&/[?&]design\b/.test(location.search)){design();return}
     draw();
     if(admin)toolbar();
   });

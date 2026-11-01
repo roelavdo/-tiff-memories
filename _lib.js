@@ -128,5 +128,49 @@ export function cleanPerson(p) {
     .map((s) => ({ label: str(s && s.label, 30), url: str(s && s.url, 300) }))
     .filter((s) => s.label && /^https?:\/\//i.test(s.url));
   const banner = typeof p.banner === "string" && PHOTO_URL.test(p.banner) ? p.banner : "";
-  return { name, bio: str(p.bio, 4000), socials, banner };
+  const out = { name, bio: str(p.bio, 4000), socials, banner };
+  if (p.page === null) out.page = null;
+  else if (p.page !== undefined) out.page = cleanPage(p.page);
+  return out;
+}
+
+/* ---- free-form personal page (scrapbook canvas) ---- */
+const FONTS = ["Caveat", "Permanent Marker", "Special Elite", "Playfair Display", "Inter"];
+const num = (v, lo, hi, d) => { v = Number(v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
+const HEX = /^#[0-9a-f]{3,8}$/i;
+
+export function cleanPage(pg) {
+  if (!pg || typeof pg !== "object") return null;
+  const bg = pg.bg && typeof pg.bg === "object" ? pg.bg : {};
+  const items = (Array.isArray(pg.items) ? pg.items : []).slice(0, 150).map((it) => {
+    if (!it || typeof it !== "object") return null;
+    const t = ["text", "link", "image", "video", "sticker"].includes(it.t) ? it.t : null;
+    if (!t) return null;
+    const o = {
+      id: str(it.id, 40) || crypto.randomUUID(), t,
+      x: num(it.x, -300, 1300, 0), y: num(it.y, -300, 8300, 0), w: num(it.w, 20, 1600, 200),
+      r: num(it.r, -180, 180, 0), z: num(it.z, 0, 9999, 1),
+    };
+    if (t === "text" || t === "link") {
+      o.text = str(it.text, 1500); o.size = num(it.size, 8, 300, 28);
+      o.color = HEX.test(it.color || "") ? it.color : "#222222";
+      o.font = FONTS.includes(it.font) ? it.font : "Inter";
+      if (t === "link") { o.url = /^https?:\/\//i.test(it.url || "") ? str(it.url, 300) : ""; }
+    }
+    if (t === "image" || t === "video") {
+      if (!(typeof it.src === "string" && PHOTO_URL.test(it.src))) return null;
+      o.src = it.src; o.frame = ["none", "polaroid", "tape"].includes(it.frame) ? it.frame : "none";
+    }
+    if (t === "sticker") o.text = str(it.text, 8);
+    return o;
+  }).filter(Boolean);
+  return {
+    h: num(pg.h, 600, 8000, 1400),
+    bg: {
+      color: HEX.test(bg.color || "") ? bg.color : "#f4efe6",
+      image: typeof bg.image === "string" && PHOTO_URL.test(bg.image) ? bg.image : "",
+      pattern: ["none", "grid", "dots", "lines"].includes(bg.pattern) ? bg.pattern : "none",
+    },
+    items,
+  };
 }

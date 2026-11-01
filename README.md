@@ -17,3 +17,7 @@ Sign in once at /admin in the same browser tab, then open /people or any /people
 - /people: type a name > "Create and edit page".
 - Person page: "Edit page" lets you click the name and bio to type, edit/add/remove social links, change or remove the banner (photo or video), then Save. "Delete person" removes them.
 - If you open a page in a new tab, add `?edit` to the address and enter the password.
+
+## Personal pages (scrapbook canvas)
+
+Each person's page can be designed freely, with its own look, independent of the TIFF theme. Owner: /people > "Edit people: on" > tap a star (or open /person?p=name&design). Add text, photos, videos, stickers and links; drag, resize (square handle), rotate (round handle), double-click text to type; "Page style" changes colour, paper pattern, background photo and page length. Save. "Reset to standard" in the normal toolbar brings back the plain layout.

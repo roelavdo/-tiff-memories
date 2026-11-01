@@ -234,7 +234,7 @@ input[type=file]{max-width:100%;color:var(--muted)}
     var sh=$("#sheet");
     var m=memories.filter(function(x){return x.id===openId})[0];
     if(!m){sh.hidden=true;sh.innerHTML="";document.body.style.overflow="";return}
-    var meta='<span>'+esc(short(m.date))+'</span>'+(m.place?'<span>'+esc(m.place)+'</span>':'')+(names(m).length?'<span>With '+names(m).map(function(n){return '<a class="pchip" href="/people/'+esc(slugOf(n))+'">'+esc(n)+'</a>'}).join("")+'</span>':'');
+    var meta='<span>'+esc(short(m.date))+'</span>'+(m.place?'<span>'+esc(m.place)+'</span>':'')+(names(m).length?'<span>With '+names(m).map(function(n){return '<a class="pchip" href="/person?p='+encodeURIComponent(slugOf(n))+'">'+esc(n)+'</a>'}).join("")+'</span>':'');
     sh.innerHTML='<div class="paper"><button type="button" class="close mono" data-act="close">Close</button>'+pics(m).map(function(u){return imgTag(u,m,true,true)}).join("")+
       '<div class="body"><span class="mono" style="color:var(--accent)">Entry '+pad(nums[m.id],3)+'</span><h2>'+esc(m.title)+'</h2><div class="meta">'+meta+'</div>'+
       (m.story?'<div class="story">'+esc(m.story)+'</div>':'')+'</div></div>';

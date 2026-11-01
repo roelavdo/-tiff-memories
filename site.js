@@ -25,7 +25,7 @@
     var map={},alias={},order=[];
     people.forEach(function(p){
       var k=p.slug||S.slugOf(p.name);if(!k)return;
-      map[k]={id:p.id,slug:k,name:p.name,bio:p.bio||"",socials:p.socials||[],banner:p.banner||"",profile:true,mems:[]};
+      map[k]={id:p.id,slug:k,name:p.name,bio:p.bio||"",socials:p.socials||[],banner:p.banner||"",profile:true,page:p.page||null,mems:[]};
       alias[k]=k;alias[S.slugOf(p.name)]=k;order.push(k);
     });
     var extra=[];
