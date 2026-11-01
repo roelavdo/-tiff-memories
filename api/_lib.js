@@ -75,7 +75,7 @@ export function clean(m) {
     title,
     date,
     place: str(m.place, 120),
-    people: str(m.people, 200),
+    people: str(m.people, 400),
     story: str(m.story, 6000),
     photos,
     photo: photos[0] || "",
@@ -84,4 +84,49 @@ export function clean(m) {
 
 export function isBlobPhoto(url) {
   return typeof url === "string" && PHOTO_URL.test(url);
+}
+
+/* ---- people profiles ---- */
+const PEOPLE_PATH = "data/people.json";
+
+async function readAt(path) {
+  const { blobs } = await list({ prefix: path, limit: 5 });
+  const hit = blobs.find((b) => b.pathname === path);
+  if (!hit) return [];
+  const r = await fetch(hit.url + "?t=" + Date.now(), { cache: "no-store" });
+  if (!r.ok) throw new Error("Could not read the list (" + r.status + ").");
+  const j = await r.json();
+  return Array.isArray(j) ? j : [];
+}
+
+async function writeAt(path, items) {
+  await put(path, JSON.stringify(items), {
+    access: "public",
+    allowOverwrite: true,
+    addRandomSuffix: false,
+    contentType: "application/json",
+    cacheControlMaxAge: 60,
+  });
+}
+
+export const readPeople = () => readAt(PEOPLE_PATH);
+export const writePeople = (items) => writeAt(PEOPLE_PATH, items);
+
+/** "Besë Krasniqi" becomes "bese-krasniqi". Used in page addresses and to match names. */
+export function slugOf(name) {
+  return String(name || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+}
+
+export function cleanPerson(p) {
+  if (!p || typeof p !== "object") return null;
+  const name = str(p.name, 80);
+  if (!name) return null;
+  const socials = (Array.isArray(p.socials) ? p.socials : [])
+    .slice(0, 12)
+    .map((s) => ({ label: str(s && s.label, 30), url: str(s && s.url, 300) }))
+    .filter((s) => s.label && /^https?:\/\//i.test(s.url));
+  const banner = typeof p.banner === "string" && PHOTO_URL.test(p.banner) ? p.banner : "";
+  return { name, bio: str(p.bio, 4000), socials, banner };
 }
