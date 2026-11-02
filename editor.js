@@ -28,7 +28,9 @@
     return E.api("/api/login",{method:"POST"}).then(function(){try{sessionStorage.setItem(KEY,pw)}catch(_){}return true},
       function(){try{sessionStorage.removeItem(KEY)}catch(_){}pw="";return false});
   };
-  E.bar=function(){var b=document.createElement("div");b.className="edbar mono";document.body.appendChild(b);return b};
+  E.bar=function(){var b=document.createElement("div");b.className="edbar mono";document.body.appendChild(b);
+    var o=document.createElement("button");o.type="button";o.textContent="Log out";o.addEventListener("click",function(){try{sessionStorage.removeItem(KEY)}catch(_){}location.href=location.pathname.replace(/\/$/,"")+(location.search.indexOf("p=")>=0?"?"+location.search.slice(1).split("&").filter(function(x){return x.indexOf("p=")===0}).join("&"):"")});
+    b.appendChild(o);return b};
   E.btn=function(label,fn,cls){var b=document.createElement("button");b.type="button";b.textContent=label;if(cls)b.className=cls;b.addEventListener("click",fn);return b};
   E.say=function(el,t,k){el.textContent=t||"";el.className="st"+(k?" "+k:"")};
   E.isVideoFile=function(f){return (f.type||"").indexOf("video/")===0||/\.(mp4|webm|mov)$/i.test(f.name||"")};

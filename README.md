@@ -21,3 +21,6 @@ Sign in once at /admin in the same browser tab, then open /people or any /people
 ## Personal pages (scrapbook canvas)
 
 Each person's page can be designed freely, with its own look, independent of the TIFF theme. Owner: /people > "Edit people: on" > tap a star (or open /person?p=name&design). Add text, photos, videos, stickers and links; drag, resize (square handle), rotate (round handle), double-click text to type; "Page style" changes colour, paper pattern, background photo and page length. Save. "Reset to standard" in the normal toolbar brings back the plain layout.
+
+## Designer extras
+Undo/Redo (Ctrl+Z / Ctrl+Y), automatic draft (restore prompt), snapping guides (hold Alt to disable), photo shapes, light motion, instant photo previews. Admin: storage meter and "Download backup". Wrong passwords are rate limited. "Log out" is in the owner toolbar.

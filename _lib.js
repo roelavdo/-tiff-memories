@@ -6,6 +6,9 @@ export { put, del };
 const DATA_PATH = "data/memories.json";
 const PHOTO_URL = /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//i;
 
+/* Best effort: lives in the memory of one server instance. */
+const FAILS = new Map();
+
 function samePassword(given) {
   const real = process.env.ADMIN_PASSWORD || "";
   const a = crypto.createHash("sha256").update(String(given)).digest();
@@ -19,11 +22,19 @@ export async function guard(req, res) {
     res.status(503).json({ error: "ADMIN_PASSWORD is not set in Vercel yet." });
     return false;
   }
+  const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "?";
+  const f = FAILS.get(ip);
+  if (f && f.n >= 6 && Date.now() - f.t < 10 * 60 * 1000) {
+    res.status(429).json({ error: "Too many wrong passwords. Wait 10 minutes and try again." });
+    return false;
+  }
   if (!samePassword(req.headers["x-admin-password"] || "")) {
+    FAILS.set(ip, { n: (f && Date.now() - f.t < 10 * 60 * 1000 ? f.n : 0) + 1, t: Date.now() });
     await new Promise((r) => setTimeout(r, 400));
     res.status(401).json({ error: "Wrong password." });
     return false;
   }
+  FAILS.delete(ip);
   return true;
 }
 
@@ -115,7 +126,7 @@ export const writePeople = (items) => writeAt(PEOPLE_PATH, items);
 /** "Besë Krasniqi" becomes "bese-krasniqi". Used in page addresses and to match names. */
 export function slugOf(name) {
   return String(name || "")
-    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 }
 
@@ -160,8 +171,10 @@ export function cleanPage(pg) {
     if (t === "image" || t === "video") {
       if (!(typeof it.src === "string" && PHOTO_URL.test(it.src))) return null;
       o.src = it.src; o.frame = ["none", "polaroid", "tape"].includes(it.frame) ? it.frame : "none";
+      o.shape = ["none", "circle", "star", "heart"].includes(it.shape) ? it.shape : "none";
     }
-    if (t === "sticker") o.text = str(it.text, 8);
+    if (t === "sticker") o.text = Array.from(str(it.text, 16)).slice(0, 8).join("");
+    o.anim = ["none", "float", "wiggle", "pulse"].includes(it.anim) ? it.anim : "none";
     return o;
   }).filter(Boolean);
   return {
@@ -173,4 +186,16 @@ export function cleanPage(pg) {
     },
     items,
   };
+}
+
+/* ---- backup and storage helpers ---- */
+export async function storageUsage() {
+  let bytes = 0, count = 0, cursor;
+  for (let i = 0; i < 30; i++) {
+    const r = await list({ cursor, limit: 1000 });
+    for (const b of r.blobs) { bytes += b.size || 0; count++; }
+    if (!r.hasMore) break;
+    cursor = r.cursor;
+  }
+  return { bytes, count };
 }

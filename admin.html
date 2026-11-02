@@ -86,6 +86,13 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
   </div>
 
   <div id="mainView" hidden>
+    <section class="list" id="tools" style="margin-bottom:40px">
+      <h2>Backup and storage</h2>
+      <p class="lede" style="margin-top:8px" id="usageTxt">Checking storage.</p>
+      <div style="height:6px;background:var(--line);margin:8px 0 16px;max-width:26rem"><div id="usageBar" style="height:100%;width:0;background:var(--ink)"></div></div>
+      <div class="actions"><button class="ghost mono" id="backupBtn" type="button">Download backup</button><span class="status" id="backupSt" role="status" aria-live="polite"></span></div>
+    </section>
+
     <h1>Add a memory</h1>
     <p class="lede">A title is enough. Add a date, the story, who was there and a photo so you do not lose them later.</p>
     <form id="form" autocomplete="off">
@@ -139,7 +146,7 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
     });
   }
 
-  function showMain(){$("#loginView").hidden=true;$("#mainView").hidden=false;$("#out").hidden=false;$("#f-date").value=today();loadList();loadPeople()}
+  function showMain(){$("#loginView").hidden=true;$("#mainView").hidden=false;$("#out").hidden=false;$("#f-date").value=today();loadList();loadPeople();loadUsage()}
   function showLogin(msg){
     pw="";try{sessionStorage.removeItem("tiff-pw")}catch(_){}
     $("#mainView").hidden=true;$("#loginView").hidden=false;$("#out").hidden=true;
@@ -306,6 +313,24 @@ section.list{margin-top:56px;border-top:1px solid var(--line);padding-top:28px}
     r.appendChild(t);r.appendChild(mid);r.appendChild(tools);
     return r;
   }
+
+  /* storage + backup */
+  function loadUsage(){
+    api("/api/usage").then(function(u){
+      var mb=u.bytes/1048576,cap=1024,pct=Math.min(100,mb/cap*100);
+      $("#usageTxt").textContent="Storage used: "+(mb<10?mb.toFixed(1):Math.round(mb))+" MB of about 1 GB (free plan), "+u.count+" files.";
+      $("#usageBar").style.width=pct+"%";
+      if(pct>85)$("#usageBar").style.background="#c0392b";
+    }).catch(function(e){$("#usageTxt").textContent="Storage could not be checked: "+e.message});
+  }
+  $("#backupBtn").addEventListener("click",function(){
+    var st=$("#backupSt");say(st,"Preparing.");
+    api("/api/backup").then(function(j){
+      var b=new Blob([JSON.stringify(j,null,2)],{type:"application/json"});
+      var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="tiff-backup-"+new Date().toISOString().slice(0,10)+".json";
+      document.body.appendChild(a);a.click();a.remove();say(st,"Backup downloaded. Photos stay in the cloud; this file keeps the list and people.","good");
+    }).catch(function(e){say(st,e.message,"bad")});
+  });
 
   /* people */
   var editing=null;
