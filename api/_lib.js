@@ -6,6 +6,9 @@ export { put, del };
 const DATA_PATH = "data/memories.json";
 const PHOTO_URL = /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//i;
 
+/* Best effort: lives in the memory of one server instance. */
+const FAILS = new Map();
+
 function samePassword(given) {
   const real = process.env.ADMIN_PASSWORD || "";
   const a = crypto.createHash("sha256").update(String(given)).digest();
@@ -19,11 +22,19 @@ export async function guard(req, res) {
     res.status(503).json({ error: "ADMIN_PASSWORD is not set in Vercel yet." });
     return false;
   }
+  const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "?";
+  const f = FAILS.get(ip);
+  if (f && f.n >= 6 && Date.now() - f.t < 10 * 60 * 1000) {
+    res.status(429).json({ error: "Too many wrong passwords. Wait 10 minutes and try again." });
+    return false;
+  }
   if (!samePassword(req.headers["x-admin-password"] || "")) {
+    FAILS.set(ip, { n: (f && Date.now() - f.t < 10 * 60 * 1000 ? f.n : 0) + 1, t: Date.now() });
     await new Promise((r) => setTimeout(r, 400));
     res.status(401).json({ error: "Wrong password." });
     return false;
   }
+  FAILS.delete(ip);
   return true;
 }
 
@@ -128,5 +139,63 @@ export function cleanPerson(p) {
     .map((s) => ({ label: str(s && s.label, 30), url: str(s && s.url, 300) }))
     .filter((s) => s.label && /^https?:\/\//i.test(s.url));
   const banner = typeof p.banner === "string" && PHOTO_URL.test(p.banner) ? p.banner : "";
-  return { name, bio: str(p.bio, 4000), socials, banner };
+  const out = { name, bio: str(p.bio, 4000), socials, banner };
+  if (p.page === null) out.page = null;
+  else if (p.page !== undefined) out.page = cleanPage(p.page);
+  return out;
+}
+
+/* ---- free-form personal page (scrapbook canvas) ---- */
+const FONTS = ["Caveat", "Permanent Marker", "Special Elite", "Playfair Display", "Inter"];
+const num = (v, lo, hi, d) => { v = Number(v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
+const HEX = /^#[0-9a-f]{3,8}$/i;
+
+export function cleanPage(pg) {
+  if (!pg || typeof pg !== "object") return null;
+  const bg = pg.bg && typeof pg.bg === "object" ? pg.bg : {};
+  const items = (Array.isArray(pg.items) ? pg.items : []).slice(0, 150).map((it) => {
+    if (!it || typeof it !== "object") return null;
+    const t = ["text", "link", "image", "video", "sticker"].includes(it.t) ? it.t : null;
+    if (!t) return null;
+    const o = {
+      id: str(it.id, 40) || crypto.randomUUID(), t,
+      x: num(it.x, -300, 1300, 0), y: num(it.y, -300, 8300, 0), w: num(it.w, 20, 1600, 200),
+      r: num(it.r, -180, 180, 0), z: num(it.z, 0, 9999, 1),
+    };
+    if (t === "text" || t === "link") {
+      o.text = str(it.text, 1500); o.size = num(it.size, 8, 300, 28);
+      o.color = HEX.test(it.color || "") ? it.color : "#222222";
+      o.font = FONTS.includes(it.font) ? it.font : "Inter";
+      if (t === "link") { o.url = /^https?:\/\//i.test(it.url || "") ? str(it.url, 300) : ""; }
+    }
+    if (t === "image" || t === "video") {
+      if (!(typeof it.src === "string" && PHOTO_URL.test(it.src))) return null;
+      o.src = it.src; o.frame = ["none", "polaroid", "tape"].includes(it.frame) ? it.frame : "none";
+      o.shape = ["none", "circle", "star", "heart"].includes(it.shape) ? it.shape : "none";
+    }
+    if (t === "sticker") o.text = Array.from(str(it.text, 16)).slice(0, 8).join("");
+    o.anim = ["none", "float", "wiggle", "pulse"].includes(it.anim) ? it.anim : "none";
+    return o;
+  }).filter(Boolean);
+  return {
+    h: num(pg.h, 600, 8000, 1400),
+    bg: {
+      color: HEX.test(bg.color || "") ? bg.color : "#f4efe6",
+      image: typeof bg.image === "string" && PHOTO_URL.test(bg.image) ? bg.image : "",
+      pattern: ["none", "grid", "dots", "lines"].includes(bg.pattern) ? bg.pattern : "none",
+    },
+    items,
+  };
+}
+
+/* ---- backup and storage helpers ---- */
+export async function storageUsage() {
+  let bytes = 0, count = 0, cursor;
+  for (let i = 0; i < 30; i++) {
+    const r = await list({ cursor, limit: 1000 });
+    for (const b of r.blobs) { bytes += b.size || 0; count++; }
+    if (!r.hasMore) break;
+    cursor = r.cursor;
+  }
+  return { bytes, count };
 }
